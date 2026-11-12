@@ -1,0 +1,19 @@
+# Local secrets, credentials and environment configuration
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+credentials*.json
+
+# Build archives and machine files
+*.zip
+.DS_Store
+Thumbs.db
+__pycache__/
+*.pyc
+node_modules/
+
+# Do not commit unsanitised operational workflow exports.
+# Only use the reviewed JSON files under workflows/.
