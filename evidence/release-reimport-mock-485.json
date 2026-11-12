@@ -1,0 +1,25 @@
+{
+  "source": "User-supplied n8n Batch - Summarise Processing Outcomes output",
+  "execution_id": 485,
+  "execution_time_utc": "2026-11-11T14:31:26Z",
+  "duration_seconds": 3.722,
+  "environment": "Same existing n8n Cloud workspace; imported and relinked release workflow copies",
+  "assessment_mode": "mock",
+  "batch_id": "BATCH-UAT-001",
+  "total_prospects": 5,
+  "successful": 4,
+  "failed": 1,
+  "batch_status": "PARTIAL_SUCCESS",
+  "verification_status": "PASS",
+  "status_counts": {"COMPLETED": 4, "REJECTED": 1, "TIMED_OUT": 0, "DUST_API_ERROR": 0, "PROCESSOR_FAILURE": 0, "INVALID_DUST_RESPONSE": 0},
+  "action_outcome_counts": {"QUEUED_PRIORITY": 1, "QUEUED_STANDARD": 0, "PERSONA_RESEARCH": 0, "NURTURE": 0, "HELD": 3, "NOT_PRIORITISED": 0},
+  "error_counts": {"MALFORMED_AI_JSON": 1},
+  "prospect_results": [
+    {"prospect_id": "P-B001", "processing_status": "COMPLETED", "action_outcome": "QUEUED_PRIORITY", "suppression_reason": "NONE", "final_validation_status": "PASS"},
+    {"prospect_id": "P-B002", "processing_status": "COMPLETED", "action_outcome": "HELD", "suppression_reason": "OPEN_OPPORTUNITY", "final_validation_status": "PASS"},
+    {"prospect_id": "P-B003", "processing_status": "COMPLETED", "action_outcome": "HELD", "suppression_reason": "RECENT_CONTACT", "final_validation_status": "PASS"},
+    {"prospect_id": "P-B004", "processing_status": "REJECTED", "error_code": "MALFORMED_AI_JSON"},
+    {"prospect_id": "P-B005", "processing_status": "COMPLETED", "action_outcome": "HELD", "suppression_reason": "EXISTING_RELATIONSHIP_OR_OWNER", "final_validation_status": "PASS"}
+  ],
+  "limitations": "Summarised from supplied output; not a raw n8n export. No Dust call or external CRM write; cross-instance portability not tested."
+}

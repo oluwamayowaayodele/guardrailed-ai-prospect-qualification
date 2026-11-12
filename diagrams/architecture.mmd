@@ -1,0 +1,11 @@
+flowchart TD
+    A[Supplied synthetic prospect records] --> B[n8n batch validation and limits]
+    B --> C[n8n prospect processor - one record per call]
+    C --> D{Assessment mode}
+    D -->|Mock| E[Synthetic assessment]
+    D -->|Live| F[Dust API request and polling]
+    E --> G[Structured decision checks]
+    F --> G
+    G --> H[Independent CRM governance subworkflow]
+    H --> I[Normalise and verify outcomes]
+    I --> J[Simulated outbound disposition]

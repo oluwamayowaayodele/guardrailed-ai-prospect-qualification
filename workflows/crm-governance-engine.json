@@ -1,0 +1,51 @@
+{
+  "name": "Finance Transformation Signal Intelligence – CRM Governance Engine – Hardening UAT",
+  "nodes": [
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        0,
+        0
+      ],
+      "id": "0c867ade-390d-4d9c-a1d3-a38e8e14cf32",
+      "name": "When Executed by Another Workflow"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst cases = $input.all();\n\nfunction enforceCRM(record) {\n  const { source, decision: inputDecision } = record;\n\n  if (\n    !source ||\n    typeof source.prospect_id !== \"string\" ||\n    !source.prospect_id.trim() ||\n    !source.crm ||\n    typeof source.crm !== \"object\" ||\n    Array.isArray(source.crm)\n  ) {\n    throw new Error(\"MISSING_SOURCE_DATA\");\n  }\n\n  if (\n    !inputDecision ||\n    typeof inputDecision !== \"object\" ||\n    Array.isArray(inputDecision)\n  ) {\n    throw new Error(\"MISSING_DECISION\");\n  }\n\n  const crm = source.crm;\n\n  const booleanFields = [\n    \"do_not_contact\",\n    \"open_opportunity\",\n    \"existing_customer\",\n    \"existing_relationship_or_owner\",\n    \"previous_disqualification\"\n  ];\n\n  for (const field of booleanFields) {\n    if (typeof crm[field] !== \"boolean\") {\n      throw new Error(`INVALID_CRM_BOOLEAN:${field}`);\n    }\n  }\n\n  if (\n    typeof crm.last_contacted_days_ago !== \"number\" ||\n    !Number.isFinite(crm.last_contacted_days_ago) ||\n    crm.last_contacted_days_ago < 0\n  ) {\n    throw new Error(\"INVALID_LAST_CONTACT\");\n  }\n\n  if (inputDecision.prospect_id !== source.prospect_id) {\n    throw new Error(\"PROSPECT_ID_MISMATCH\");\n  }\n\n  const decision = { ...inputDecision };\n\n  const validReasons = [\n    \"NONE\",\n    \"DO_NOT_CONTACT\",\n    \"OPEN_OPPORTUNITY\",\n    \"EXISTING_CUSTOMER\",\n    \"EXISTING_RELATIONSHIP_OR_OWNER\",\n    \"PREVIOUS_DISQUALIFICATION\",\n    \"RECENT_CONTACT\",\n    \"OTHER\"\n  ];\n\n  if (\n    typeof decision.suppression_applied !== \"boolean\" ||\n    !validReasons.includes(decision.suppression_reason)\n  ) {\n    throw new Error(\"INVALID_AI_SUPPRESSION\");\n  }\n\n  const aiHold =\n    decision.outreach_disposition === \"HOLD\";\n\n  // Reject contradictory AI suppression states.\n  if (\n    aiHold !== decision.suppression_applied ||\n    (aiHold && decision.suppression_reason === \"NONE\") ||\n    (!aiHold && decision.suppression_reason !== \"NONE\")\n  ) {\n    throw new Error(\"INCONSISTENT_AI_SUPPRESSION\");\n  }\n\n  const aiReason = aiHold\n    ? decision.suppression_reason\n    : \"NONE\";\n\n  const reasons = [];\n\n  // Deterministic CRM restrictions.\n  // Order establishes primary-reason precedence.\n  if (crm.do_not_contact) {\n    reasons.push(\"DO_NOT_CONTACT\");\n  }\n\n  if (crm.open_opportunity) {\n    reasons.push(\"OPEN_OPPORTUNITY\");\n  }\n\n  if (crm.existing_customer) {\n    reasons.push(\"EXISTING_CUSTOMER\");\n  }\n\n  if (crm.existing_relationship_or_owner) {\n    reasons.push(\"EXISTING_RELATIONSHIP_OR_OWNER\");\n  }\n\n  if (crm.previous_disqualification) {\n    reasons.push(\"PREVIOUS_DISQUALIFICATION\");\n  }\n\n  if (crm.last_contacted_days_ago <= 14) {\n    reasons.push(\"RECENT_CONTACT\");\n  }\n\n  const crmHold = reasons.length > 0;\n\n  decision.ai_suppression_reason = aiReason;\n\n  // CRM governance and AI judgement remain distinct.\n  decision.crm_policy_status = crmHold\n    ? \"SUPPRESSED\"\n    : \"CLEAR\";\n\n  decision.crm_policy_reasons = reasons;\n\n  if (crmHold && aiHold) {\n    decision.suppression_source = \"BOTH\";\n  } else if (crmHold) {\n    decision.suppression_source = \"CRM\";\n  } else if (aiHold) {\n    decision.suppression_source = \"AI\";\n  } else {\n    decision.suppression_source = \"NONE\";\n  }\n\n  decision.review_required = aiHold && !crmHold;\n\n  // CRM restrictions always override permission to contact.\n  if (crmHold) {\n    decision.suppression_applied = true;\n    decision.suppression_reason = reasons[0];\n    decision.outreach_disposition = \"HOLD\";\n\n    decision.decision_summary =\n      \"Outreach on hold due to CRM restriction: \" +\n      reasons.join(\", \") + \".\";\n\n    decision.decision_rationale =\n      (decision.decision_rationale || \"\") +\n      \"\\nINDEPENDENT CRM ENFORCEMENT: \" +\n      reasons.join(\", \") +\n      \". CRM restrictions override the AI recommendation.\" +\n      (aiHold\n        ? \"\\nAI also recommended HOLD: \" + aiReason + \".\"\n        : \"\");\n\n  } else if (aiHold) {\n    // Preserve conservative AI decisions.\n    // Do not claim they were independently verified by CRM.\n    decision.suppression_applied = true;\n    decision.suppression_reason = aiReason;\n    decision.outreach_disposition = \"HOLD\";\n\n    decision.decision_summary =\n      \"AI recommended holding outbound pending review. \" +\n      \"Reason: \" + aiReason + \".\";\n\n    decision.decision_rationale =\n      (decision.decision_rationale || \"\") +\n      \"\\nAI-INITIATED HOLD: \" + aiReason +\n      \". No corresponding deterministic CRM restriction \" +\n      \"was found. Review is required before releasing outbound.\";\n  }\n\n  decision.crm_policy_checked_at = new Date().toISOString();\n\n  return decision;\n}\n\n// Preserve individual record outcomes for batch processing.\nreturn cases.map((item, index) => {\n  const record = item.json;\n\n  try {\n    return {\n      json: {\n        test_id: record.test_id ?? null,\n        test_name: record.test_name ?? null,\n        expected: record.expected ?? null,\n        execution_status: \"PROCESSED\",\n        actual: enforceCRM(record),\n        error_code: null\n      },\n      pairedItem: { item: index }\n    };\n  } catch (error) {\n    return {\n      json: {\n        test_id: record.test_id ?? null,\n        test_name: record.test_name ?? null,\n        expected: record.expected ?? null,\n        execution_status: \"REJECTED\",\n        actual: null,\n        error_code: error.message\n      },\n      pairedItem: { item: index }\n    };\n  }\n});\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        0
+      ],
+      "id": "fab49760-4c92-4f14-98ba-9abec4525706",
+      "name": "Enforce CRM Governance"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "Enforce CRM Governance",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "nodeGroups": []
+}

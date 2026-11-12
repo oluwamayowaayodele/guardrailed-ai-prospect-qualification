@@ -1,0 +1,757 @@
+{
+  "name": "Finance Transformation Signal Intelligence – Prospect Processor – UAT",
+  "nodes": [
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        0,
+        768
+      ],
+      "id": "9523f001-17e8-4b8b-9c69-cfef845c5834",
+      "name": "When Executed by Another Workflow"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst items = $input.all();\n\n// This processor is designed to handle exactly\n// one prospect per sub-workflow invocation.\nif (items.length !== 1) {\n  throw new Error(\n    `EXPECTED_SINGLE_PROSPECT: received ${items.length}`\n  );\n}\n\nconst prospect = items[0].json;\n\n// Preserve the existing Stage 17 input validation,\n// including one-based batch positions.\nif (\n  !prospect ||\n  typeof prospect !== \"object\" ||\n  Array.isArray(prospect) ||\n  typeof prospect.batch_id !== \"string\" ||\n  !prospect.batch_id.trim() ||\n  typeof prospect.prospect_id !== \"string\" ||\n  !prospect.prospect_id.trim() ||\n  !Number.isInteger(prospect.batch_position) ||\n  prospect.batch_position < 1 ||\n  !Number.isInteger(prospect.batch_size) ||\n  prospect.batch_size < 1 ||\n  prospect.batch_position > prospect.batch_size ||\n  !prospect.crm ||\n  typeof prospect.crm !== \"object\" ||\n  Array.isArray(prospect.crm)\n) {\n  throw new Error(\"INVALID_PROSPECT_INPUT\");\n}\n\n// Mock is the default so the public/UAT workflow\n// remains replayable without Dust credentials.\nconst assessmentMode =\n  prospect.assessment_mode ?? \"mock\";\n\nif (\n  assessmentMode !== \"mock\" &&\n  assessmentMode !== \"live\"\n) {\n  throw new Error(\"INVALID_ASSESSMENT_MODE\");\n}\n\n// Optional configuration for live Dust polling.\n// The default deadline remains 120 seconds.\nconst pollingTimeout =\n  prospect.polling_timeout_ms ?? 120000;\n\nif (\n  typeof pollingTimeout !== \"number\" ||\n  !Number.isInteger(pollingTimeout) ||\n  pollingTimeout < 1000 ||\n  pollingTimeout > 120000\n) {\n  throw new Error(\"INVALID_POLLING_TIMEOUT\");\n}\n\n// Reinitialise this timestamp for each actual\n// processor invocation. Do not trust a caller's\n// previous timestamp as the execution deadline.\nconst processorStartedAt = new Date().toISOString();\n\nreturn [{\n  json: {\n    ...prospect,\n\n    assessment_mode: assessmentMode,\n    polling_timeout_ms: pollingTimeout,\n\n    processor_status: \"INPUT_VALIDATED\",\n    processor_started_at: processorStartedAt\n  },\n\n  // Preserve the input-item pairing used by n8n.\n  pairedItem: { item: 0 }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        768
+      ],
+      "id": "e493f5bb-a068-45c2-9704-5cabb11c600c",
+      "name": "Processor - Validate Prospect Input"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "\nconst prospect = $json;\n\nconst base = {\n  batch_id: prospect.batch_id,\n  batch_position: prospect.batch_position,\n  batch_size: prospect.batch_size,\n  prospect_id: prospect.prospect_id,\n  processor_started_at: prospect.processor_started_at\n};\n\n// Synthetic Dust response used for UAT.\n// P-B004 deliberately produces malformed JSON.\nconst rawResponse = prospect.prospect_id === \"P-B004\"\n  ? '{\"outreach_disposition\":'\n  : JSON.stringify({\n      prospect_id: prospect.prospect_id,\n      account_priority: \"HIGH\",\n      prospect_fit: \"HIGH\",\n      outreach_disposition:\n        \"ADD_TO_PRIORITY_OUTBOUND_QUEUE\",\n      suppression_applied: false,\n      suppression_reason: \"NONE\",\n      decision_summary:\n        \"Synthetic AI recommendation for governance testing.\",\n      decision_rationale:\n        \"Mock decision generated to test real CRM governance.\"\n    });\n\ntry {\n  const decision = JSON.parse(rawResponse);\n\n  if (\n    !decision ||\n    typeof decision !== \"object\" ||\n    Array.isArray(decision) ||\n    decision.prospect_id !== prospect.prospect_id\n  ) {\n    throw new Error(\"INVALID_MOCK_DECISION\");\n  }\n\n  return {\n    json: {\n      ...base,\n      assessment_status: \"READY_FOR_GOVERNANCE\",\n      source: {\n        prospect_id: prospect.prospect_id,\n        crm: prospect.crm\n      },\n      decision,\n      error_code: null\n    }\n  };\n\n} catch (error) {\n  const errorCode = error instanceof SyntaxError\n    ? \"MALFORMED_AI_JSON\"\n    : \"INVALID_MOCK_DECISION\";\n\n  return {\n    json: {\n      ...base,\n      assessment_status: \"REJECTED\",\n      source: {\n        prospect_id: prospect.prospect_id,\n        crm: prospect.crm\n      },\n      decision: null,\n      error_code: errorCode\n    }\n  };\n}\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        672,
+        864
+      ],
+      "id": "bf94579f-8a77-4222-9abf-45ecca4a3b1d",
+      "name": "Processor - Prepare Mock AI Decision"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 4
+          },
+          "conditions": [
+            {
+              "id": "8f209ede-b69e-41f1-a3a6-0622b71dbdbd",
+              "leftValue": "={{ $json.assessment_status }}",
+              "rightValue": "=READY_FOR_GOVERNANCE",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.4,
+      "position": [
+        896,
+        864
+      ],
+      "id": "70e7914a-b10e-48f6-8fbe-f9aa8863355f",
+      "name": "Processor - Assessment Ready"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "",
+          "mode": "list",
+          "cachedResultName": "Finance Transformation Signal Intelligence – CRM Governance Engine – Hardening UAT"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.4,
+      "position": [
+        1120,
+        768
+      ],
+      "id": "d7aa0b35-2922-440e-8c12-f0a285812076",
+      "name": "Processor - Call Hardened CRM Governance"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst assessment = $json;\n\nif (assessment.assessment_status !== \"REJECTED\") {\n  throw new Error(\n    \"EXPECTED_REJECTED_ASSESSMENT\"\n  );\n}\n\nif (\n  typeof assessment.prospect_id !== \"string\" ||\n  !assessment.prospect_id.trim() ||\n  !assessment.error_code\n) {\n  throw new Error(\n    \"INVALID_REJECTION_ENVELOPE\"\n  );\n}\n\nreturn {\n  json: {\n    batch_id: assessment.batch_id,\n    batch_position: assessment.batch_position,\n    batch_size: assessment.batch_size,\n    prospect_id: assessment.prospect_id,\n\n    processing_status: \"REJECTED\",\n    action_outcome: null,\n    outreach_disposition: null,\n    suppression_source: null,\n    suppression_reason: null,\n\n    error_code: assessment.error_code,\n\n    decision_summary:\n      \"Assessment rejected: \" +\n      assessment.error_code,\n\n    dust_conversation_id:\n    assessment.dust_conversation_id ?? null,\n    assessment_mode:\n    assessment.assessment_mode ?? \"mock\",\n    processed_at: new Date().toISOString()\n  }\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        960
+      ],
+      "id": "8e5ab287-d710-4a3b-b7d2-a9a78039c455",
+      "name": "Processor - Normalise Assessment Rejection"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst results = $input.all();\n\n// Exactly one prospect per processor invocation.\nif (results.length !== 1) {\n  throw new Error(\"EXPECTED_ONE_GOVERNANCE_RESULT\");\n}\n\n// Shared validation runs before the mock/live branch.\nconst original = $(\n  \"Processor - Validate Prospect Input\"\n).first().json;\n\nif (\n  !original ||\n  typeof original.prospect_id !== \"string\" ||\n  !original.prospect_id.trim() ||\n  typeof original.batch_id !== \"string\" ||\n  !original.batch_id.trim() ||\n  !Number.isInteger(original.batch_position) ||\n  !Number.isInteger(original.batch_size)\n) {\n  throw new Error(\"INVALID_ORIGINAL_PROSPECT_CONTEXT\");\n}\n\nconst envelope = results[0].json;\nconst assessmentMode = original.assessment_mode ?? \"mock\";\n\nif (![\"mock\", \"live\"].includes(assessmentMode)) {\n  throw new Error(\"INVALID_ASSESSMENT_MODE\");\n}\n\n// A live conversation reference must come from the\n// successful creation node, not solely from AI output.\nlet trustedDustConversationId = null;\n\nif (assessmentMode === \"live\") {\n  const creation = $(\n    \"Processor - Validate Dust Creation\"\n  ).first().json;\n\n  if (\n    creation.dust_create_status !== \"CREATED\" ||\n    typeof creation.dust_conversation_id !== \"string\" ||\n    !creation.dust_conversation_id.trim()\n  ) {\n    throw new Error(\"MISSING_TRUSTED_DUST_CONVERSATION\");\n  }\n\n  trustedDustConversationId =\n    creation.dust_conversation_id;\n}\n\nconst base = {\n  batch_id: original.batch_id,\n  batch_position: original.batch_position,\n  batch_size: original.batch_size,\n  prospect_id: original.prospect_id,\n  assessment_mode: assessmentMode,\n\n  processing_status: null,\n  action_outcome: null,\n  outreach_disposition: null,\n  suppression_source: null,\n  suppression_reason: null,\n  error_code: null,\n  decision_summary: null,\n\n  dust_conversation_id: trustedDustConversationId,\n  processed_at: new Date().toISOString()\n};\n\nfunction reject(code, detail) {\n  return {\n    ...base,\n    processing_status: \"REJECTED\",\n    error_code: code,\n    decision_summary: \"Governance rejected: \" + code,\n    error_detail: detail ?? null\n  };\n}\n\nconst allowedDispositions = [\n  \"ADD_TO_PRIORITY_OUTBOUND_QUEUE\",\n  \"ADD_TO_STANDARD_OUTBOUND_QUEUE\",\n  \"RESEARCH_BETTER_PERSONA\",\n  \"NURTURE_OR_MONITOR\",\n  \"HOLD\",\n  \"DO_NOT_PRIORITISE\"\n];\n\nconst actionOutcomes = {\n  ADD_TO_PRIORITY_OUTBOUND_QUEUE: \"QUEUED_PRIORITY\",\n  ADD_TO_STANDARD_OUTBOUND_QUEUE: \"QUEUED_STANDARD\",\n  RESEARCH_BETTER_PERSONA: \"PERSONA_RESEARCH\",\n  NURTURE_OR_MONITOR: \"NURTURE\",\n  HOLD: \"HELD\",\n  DO_NOT_PRIORITISE: \"NOT_PRIORITISED\"\n};\n\nconst allowedReasons = [\n  \"NONE\",\n  \"DO_NOT_CONTACT\",\n  \"OPEN_OPPORTUNITY\",\n  \"EXISTING_CUSTOMER\",\n  \"EXISTING_RELATIONSHIP_OR_OWNER\",\n  \"PREVIOUS_DISQUALIFICATION\",\n  \"RECENT_CONTACT\",\n  \"OTHER\"\n];\n\nlet output;\n\ntry {\n  // Governance may explicitly reject the assessment.\n  if (envelope.execution_status === \"REJECTED\") {\n    output = reject(\n      envelope.error_code || \"GOVERNANCE_REJECTED\",\n      \"The CRM Governance Engine rejected this record.\"\n    );\n\n  } else {\n    if (\n      envelope.execution_status !== \"PROCESSED\" ||\n      envelope.error_code !== null\n    ) {\n      throw new Error(\"INVALID_GOVERNANCE_ENVELOPE\");\n    }\n\n    const d = envelope.actual;\n\n    if (\n      !d ||\n      typeof d !== \"object\" ||\n      Array.isArray(d)\n    ) {\n      throw new Error(\"MISSING_GOVERNANCE_DECISION\");\n    }\n\n    // Protect against cross-prospect result contamination.\n    if (d.prospect_id !== original.prospect_id) {\n      throw new Error(\"PROSPECT_ID_MISMATCH\");\n    }\n\n    // Never accept a conflicting Dust reference.\n    if (\n      assessmentMode === \"live\" &&\n      d.dust_conversation_id != null &&\n      d.dust_conversation_id !== trustedDustConversationId\n    ) {\n      throw new Error(\"DUST_CONVERSATION_ID_MISMATCH\");\n    }\n\n    if (\n      !allowedDispositions.includes(\n        d.outreach_disposition\n      )\n    ) {\n      throw new Error(\"INVALID_OUTREACH_DISPOSITION\");\n    }\n\n    if (\n      ![\"HIGH\", \"MEDIUM\", \"LOW\"].includes(\n        d.account_priority\n      ) ||\n      ![\"HIGH\", \"MEDIUM\", \"LOW\"].includes(\n        d.prospect_fit\n      )\n    ) {\n      throw new Error(\"INVALID_PRIORITY_CLASSIFICATION\");\n    }\n\n    if (\n      !allowedReasons.includes(\n        d.suppression_reason\n      ) ||\n      !allowedReasons.includes(\n        d.ai_suppression_reason\n      )\n    ) {\n      throw new Error(\"INVALID_SUPPRESSION_REASON\");\n    }\n\n    if (\n      ![\"NONE\", \"AI\", \"CRM\", \"BOTH\"].includes(\n        d.suppression_source\n      )\n    ) {\n      throw new Error(\"INVALID_SUPPRESSION_SOURCE\");\n    }\n\n    if (\n      typeof d.suppression_applied !== \"boolean\" ||\n      typeof d.review_required !== \"boolean\" ||\n      !Array.isArray(d.crm_policy_reasons)\n    ) {\n      throw new Error(\"INVALID_GOVERNANCE_FIELDS\");\n    }\n\n    if (\n      typeof d.decision_summary !== \"string\" ||\n      !d.decision_summary.trim() ||\n      typeof d.decision_rationale !== \"string\" ||\n      !d.decision_rationale.trim()\n    ) {\n      throw new Error(\"INVALID_DECISION_EXPLANATION\");\n    }\n\n    if (\n      d.crm_policy_reasons.some(reason =>\n        !allowedReasons.includes(reason) ||\n        reason === \"NONE\"\n      ) ||\n      new Set(d.crm_policy_reasons).size !==\n        d.crm_policy_reasons.length\n    ) {\n      throw new Error(\"INVALID_CRM_POLICY_REASONS\");\n    }\n\n    if (\n      typeof d.crm_policy_checked_at !== \"string\" ||\n      !Number.isFinite(\n        Date.parse(d.crm_policy_checked_at)\n      )\n    ) {\n      throw new Error(\"INVALID_CRM_POLICY_TIMESTAMP\");\n    }\n\n    const crmHold =\n      d.crm_policy_reasons.length > 0;\n\n    const aiHold =\n      d.ai_suppression_reason !== \"NONE\";\n\n    const mustHold = crmHold || aiHold;\n\n    const expectedSource =\n      crmHold && aiHold ? \"BOTH\" :\n      crmHold ? \"CRM\" :\n      aiHold ? \"AI\" :\n      \"NONE\";\n\n    if (d.suppression_source !== expectedSource) {\n      throw new Error(\"SUPPRESSION_SOURCE_MISMATCH\");\n    }\n\n    if (\n      d.crm_policy_status !==\n      (crmHold ? \"SUPPRESSED\" : \"CLEAR\")\n    ) {\n      throw new Error(\"CRM_POLICY_STATUS_MISMATCH\");\n    }\n\n    if (\n      d.suppression_applied !== mustHold ||\n      (d.outreach_disposition === \"HOLD\") !== mustHold\n    ) {\n      throw new Error(\n        \"SUPPRESSION_DISPOSITION_MISMATCH\"\n      );\n    }\n\n    const expectedReason = crmHold\n      ? d.crm_policy_reasons[0]\n      : aiHold\n        ? d.ai_suppression_reason\n        : \"NONE\";\n\n    if (d.suppression_reason !== expectedReason) {\n      throw new Error(\"SUPPRESSION_REASON_MISMATCH\");\n    }\n\n    if (\n      d.review_required !== (aiHold && !crmHold)\n    ) {\n      throw new Error(\"REVIEW_FLAG_MISMATCH\");\n    }\n\n    // All governance checks passed.\n    output = {\n      ...base,\n\n      processing_status: \"COMPLETED\",\n\n      action_outcome:\n        actionOutcomes[d.outreach_disposition],\n\n      outreach_disposition:\n        d.outreach_disposition,\n\n      suppression_source:\n        d.suppression_source,\n\n      suppression_reason:\n        d.suppression_reason,\n\n      error_code: null,\n      decision_summary: d.decision_summary,\n\n      account_priority: d.account_priority,\n      prospect_fit: d.prospect_fit,\n\n      review_required: d.review_required,\n      crm_policy_status: d.crm_policy_status,\n      crm_policy_reasons: d.crm_policy_reasons,\n\n      dust_conversation_id:\n        assessmentMode === \"live\"\n          ? trustedDustConversationId\n          : d.dust_conversation_id ?? null,\n\n      governance_checked_at:\n        d.crm_policy_checked_at,\n\n      final_validation_status: \"PASS\"\n    };\n  }\n\n} catch (error) {\n  output = reject(\n    \"INVALID_FINAL_GOVERNANCE_DECISION\",\n    error.message\n  );\n}\n\nreturn [{ json: output }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1344,
+        768
+      ],
+      "id": "0846bc40-8e3c-45c1-ab09-dd95f2ab4cd0",
+      "name": "Processor - Normalise Governance Result"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "\nconst prospect = $json;\n\nif (\n  typeof prospect.prospect_id !== \"string\" ||\n  !prospect.prospect_id.trim() ||\n  !prospect.crm ||\n  typeof prospect.crm !== \"object\" ||\n  Array.isArray(prospect.crm)\n) {\n  throw new Error(\"INVALID_LIVE_PROSPECT_INPUT\");\n}\n\nif (prospect.assessment_mode !== \"live\") {\n  throw new Error(\"LIVE_MODE_NOT_ENABLED\");\n}\n\n// Preserve the original record before calling Dust.\n// Never derive prospect identity from the AI response.\nconst source = JSON.parse(JSON.stringify(prospect));\n\nconst dustRequestBody = {\n  title: null,\n  visibility: \"unlisted\",\n  message: {\n    content:\n      \"Assess the following prospect record and return \" +\n      \"the decision using your configured structured \" +\n      \"output contract:\\n\\n\" +\n      JSON.stringify(source),\n\n    mentions: [\n      {\n        configurationId: \"YOUR_DUST_AGENT_CONFIGURATION_ID\"\n      }\n    ],\n\n    context: {\n      timezone: \"Europe/London\",\n      username: \"n8n Finance Signal Integration\",\n      email: null,\n      fullName: \"n8n Finance Signal Integration\",\n      profilePictureUrl: null,\n      origin: \"api\"\n    }\n  }\n};\n\nreturn {\n  json: {\n    batch_id: source.batch_id,\n    batch_position: source.batch_position,\n    batch_size: source.batch_size,\n    prospect_id: source.prospect_id,\n\n    assessment_mode: \"live\",\n    processor_started_at:\n      source.processor_started_at ??\n      new Date().toISOString(),\n\n    source_prospect: source,\n    dust_request_body: dustRequestBody\n  }\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        672,
+        576
+      ],
+      "id": "28bbe3b3-6788-49b2-9807-68d908780294",
+      "name": "Processor - Prepare Live Dust Request"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst items = $input.all();\n\nif (items.length !== 1) {\n  throw new Error(\"EXPECTED_ONE_DUST_CREATE_RESPONSE\");\n}\n\n// The processor handles one prospect per invocation.\n// Retrieve its context from before the HTTP request.\nconst original = $(\n  \"Processor - Prepare Live Dust Request\"\n).first().json;\n\nconst response = items[0].json;\n\nif (\n  !original ||\n  typeof original.prospect_id !== \"string\" ||\n  typeof original.batch_id !== \"string\" ||\n  !original.source_prospect\n) {\n  throw new Error(\"MISSING_ORIGINAL_PROSPECT_CONTEXT\");\n}\n\nconst base = {\n  batch_id: original.batch_id,\n  batch_position: original.batch_position,\n  batch_size: original.batch_size,\n  prospect_id: original.prospect_id,\n  assessment_mode: \"live\",\n  processor_started_at: original.processor_started_at,\n  source_prospect: original.source_prospect\n};\n\nconst conversationId = response?.conversation?.sId;\n\nconst validConversation =\n  typeof conversationId === \"string\" &&\n  conversationId.trim().length > 0;\n\nconst hasError =\n  response?.error != null ||\n  response?.statusCode >= 400 ||\n  response?.status >= 400;\n\nif (hasError || !validConversation) {\n  const rawError =\n    response?.error?.message ??\n    response?.error ??\n    response?.message ??\n    \"Dust did not return a valid conversation ID\";\n\n  return [{\n    json: {\n      ...base,\n      dust_create_status: \"FAILED\",\n      dust_conversation_id: null,\n      error_code: \"DUST_CREATE_FAILED\",\n      error_detail: String(rawError),\n      checked_at: new Date().toISOString()\n    }\n  }];\n}\n\nreturn [{\n  json: {\n    ...base,\n    dust_create_status: \"CREATED\",\n    dust_conversation_id: conversationId,\n    dust_conversation_created:\n      response.conversation.created ?? null,\n    error_code: null,\n    error_detail: null,\n    checked_at: new Date().toISOString()\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        576
+      ],
+      "id": "aa635c87-bf08-4805-8460-28f98f59c533",
+      "name": "Processor - Validate Dust Creation"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://eu.dust.tt/api/v1/w/YOUR_DUST_WORKSPACE_ID/assistant/conversations",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.dust_request_body) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        896,
+        576
+      ],
+      "id": "bf2002ff-f9f6-4226-99e9-ababef280452",
+      "name": "Processor - Dust Create Conversation",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 4
+          },
+          "conditions": [
+            {
+              "id": "4fd3d9c8-61b6-46ae-aaac-5b897ac2a4ef",
+              "leftValue": "={{ $json.assessment_mode ?? \"mock\" }}",
+              "rightValue": "live",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.4,
+      "position": [
+        448,
+        768
+      ],
+      "id": "53a30a8a-6527-421c-9c1b-9bfb0b69c505",
+      "name": "Processor - Use Live Dust?"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 4
+          },
+          "conditions": [
+            {
+              "id": "640c9349-b9e4-49d5-81a6-327139c3e585",
+              "leftValue": "={{ $json.dust_create_status }}",
+              "rightValue": "CREATED",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.4,
+      "position": [
+        1344,
+        576
+      ],
+      "id": "e95d9323-dd83-4f40-aab1-7fc38956e134",
+      "name": "Processor - Dust Creation Successful?"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst items = $input.all();\n\nif (items.length !== 1) {\n  throw new Error(\"EXPECTED_ONE_DUST_CREATION_FAILURE\");\n}\n\nconst record = items[0].json;\n\nif (\n  record.dust_create_status !== \"FAILED\" ||\n  typeof record.batch_id !== \"string\" ||\n  typeof record.prospect_id !== \"string\" ||\n  !Number.isInteger(record.batch_position) ||\n  !Number.isInteger(record.batch_size)\n) {\n  throw new Error(\"INVALID_DUST_CREATION_FAILURE_INPUT\");\n}\n\nreturn [{\n  json: {\n    batch_id: record.batch_id,\n    batch_position: record.batch_position,\n    batch_size: record.batch_size,\n    prospect_id: record.prospect_id,\n\n    processing_status: \"DUST_API_ERROR\",\n    action_outcome: null,\n    outreach_disposition: null,\n\n    suppression_source: null,\n    suppression_reason: null,\n\n    error_code: \"DUST_CREATE_FAILED\",\n    error_detail: record.error_detail ?? null,\n\n    decision_summary:\n      \"Dust conversation creation failed or returned \" +\n      \"an invalid response. No business action was authorised.\",\n\n    dust_conversation_id: null,\n    assessment_mode: \"live\",\n\n    processor_started_at:\n      record.processor_started_at ?? null,\n\n    processed_at: new Date().toISOString()\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1616,
+        656
+      ],
+      "id": "2c433943-cd31-4aa7-9129-57deb599cbe4",
+      "name": "Processor - Normalise Dust Creation Failure"
+    },
+    {
+      "parameters": {
+        "amount": 10
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1616,
+        448
+      ],
+      "id": "2bee6cbc-5d8c-411c-b66b-92d56e8b3348",
+      "name": "Processor - Wait for Dust Processing"
+    },
+    {
+      "parameters": {
+        "url": "={{ \"https://eu.dust.tt/api/v1/w/YOUR_DUST_WORKSPACE_ID/assistant/conversations/\" + $(\"Processor - Validate Dust Creation\").first().json.dust_conversation_id }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1840,
+        448
+      ],
+      "id": "712f9150-425f-4e46-bcc1-f18f0716b84f",
+      "name": "Processor - Get Dust Conversation",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst items = $input.all();\n\nif (items.length !== 1) {\n  throw new Error(\n    \"EXPECTED_ONE_DUST_CONVERSATION_RESPONSE\"\n  );\n}\n\nconst response = items[0].json;\n\nif (\n  !response ||\n  typeof response !== \"object\" ||\n  Array.isArray(response)\n) {\n  throw new Error(\"INVALID_DUST_HTTP_RESPONSE\");\n}\n\nconst conversation = response.conversation;\n\n// Recognise both HTTP-level failures and\n// error objects returned by n8n.\nconst statusCandidates = [\n  response.statusCode,\n  response.status,\n  response.error?.statusCode,\n  response.error?.status\n];\n\nconst httpError = statusCandidates.some(value => {\n  const status = Number(value);\n  return Number.isFinite(status) && status >= 400;\n});\n\nconst hasApiError =\n  response.error != null ||\n  httpError;\n\n// Dust conversation creation timestamps\n// use milliseconds since Unix epoch.\nconst created = conversation?.created;\n\nconst timestampValid =\n  typeof created === \"number\" &&\n  Number.isFinite(created) &&\n  created >= 1000000000000 &&\n  created <= Date.now() + 60000;\n\nconst messages = Array.isArray(conversation?.content)\n  ? conversation.content.flat()\n  : [];\n\nconst agentMessages = messages.filter(\n  message => message?.type === \"agent_message\"\n);\n\nconst latestAgentMessage =\n  agentMessages[agentMessages.length - 1] ?? null;\n\nlet dust_poll_status;\n\nif (hasApiError || !conversation) {\n  dust_poll_status = \"API_ERROR\";\n\n} else if (!timestampValid) {\n  dust_poll_status = \"INVALID_TIMESTAMP\";\n\n} else if (conversation.hasError === true) {\n  dust_poll_status = \"AGENT_ERROR\";\n\n} else if (conversation.isRunningAgentLoop === true) {\n  dust_poll_status = \"PROCESSING\";\n\n} else if (latestAgentMessage?.status === \"failed\") {\n  dust_poll_status = \"AGENT_ERROR\";\n\n} else if (\n  latestAgentMessage?.status === \"succeeded\" &&\n  typeof latestAgentMessage.content === \"string\"\n) {\n  dust_poll_status = \"COMPLETED\";\n\n} else if (\n  latestAgentMessage?.status === \"succeeded\"\n) {\n  dust_poll_status = \"INVALID_RESPONSE\";\n\n} else {\n  // No terminal agent response is available yet.\n  dust_poll_status = \"PROCESSING\";\n}\n\nreturn [{\n  json: {\n    ...response,\n\n    dust_poll_status,\n\n    dust_created_at:\n      timestampValid ? created : null,\n\n    dust_elapsed_ms:\n      timestampValid ? Date.now() - created : null,\n\n    dust_agent_message_id:\n      latestAgentMessage?.sId ?? null,\n\n    dust_agent_status:\n      latestAgentMessage?.status ?? null,\n\n    dust_http_error: hasApiError,\n\n    dust_http_status:\n      statusCandidates\n        .map(value => Number(value))\n        .find(value =>\n          Number.isFinite(value) &&\n          value >= 100\n        ) ?? null\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2064,
+        448
+      ],
+      "id": "4ed808e1-9285-4bd2-9b3f-640ced817922",
+      "name": "Processor - Inspect Dust Conversation"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 4
+          },
+          "conditions": [
+            {
+              "id": "d1f5441a-9ce6-4cd0-88a5-2b99616b6b16",
+              "leftValue": "={{ $json.dust_poll_status }}",
+              "rightValue": "PROCESSING",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.4,
+      "position": [
+        2288,
+        448
+      ],
+      "id": "1cf910eb-05d6-46f9-ad45-2e881fcef8f3",
+      "name": "Processor - Dust Still Processing?"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 4
+          },
+          "conditions": [
+            {
+              "id": "221b8405-e9a6-4512-bb14-0c8e39fc4314",
+              "leftValue": "={{ Boolean((() => {\n  const source = $(\"Processor - Prepare Live Dust Request\").first().json;\n  const startedAt = Date.parse(source.processor_started_at);\n  const timeout = Number(\n    source.source_prospect?.polling_timeout_ms ?? 120000\n  );\n\n  return Number.isFinite(startedAt)\n    && Number.isFinite(timeout)\n    && timeout >= 1000\n    && timeout <= 120000\n    && Date.now() - startedAt < timeout;\n})()) }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.4,
+      "position": [
+        2496,
+        320
+      ],
+      "id": "88d30006-7e07-4ce4-9a4b-71da9bfd798c",
+      "name": "Processor - Polling Window Available?"
+    },
+    {
+      "parameters": {
+        "amount": 10
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        2848,
+        0
+      ],
+      "id": "1ea641ff-f580-4966-9cd7-832e7620384f",
+      "name": "Processor - Wait Before Dust Retry"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst items = $input.all();\n\nif (items.length !== 1) {\n  throw new Error(\"EXPECTED_ONE_DUST_TIMEOUT\");\n}\n\nconst source = $(\n  \"Processor - Prepare Live Dust Request\"\n).first().json;\n\nconst poll = items[0].json;\n\nif (\n  !source ||\n  typeof source.prospect_id !== \"string\" ||\n  !source.prospect_id.trim() ||\n  typeof source.batch_id !== \"string\" ||\n  !source.batch_id.trim()\n) {\n  throw new Error(\"MISSING_TIMEOUT_PROSPECT_CONTEXT\");\n}\n\nconst startedAt = Date.parse(source.processor_started_at);\n\nconst elapsedMs = Number.isFinite(startedAt)\n  ? Math.max(0, Date.now() - startedAt)\n  : null;\n\nreturn [{\n  json: {\n    batch_id: source.batch_id,\n    batch_position: source.batch_position,\n    batch_size: source.batch_size,\n    prospect_id: source.prospect_id,\n\n    assessment_mode: \"live\",\n    processing_status: \"TIMED_OUT\",\n    action_outcome: null,\n    outreach_disposition: null,\n\n    suppression_source: null,\n    suppression_reason: null,\n\n    error_code: \"DUST_POLLING_TIMEOUT\",\n    error_detail:\n      \"Dust did not return a completed assessment \" +\n      \"within the configured polling window.\",\n\n    decision_summary:\n      \"The Dust assessment exceeded its polling \" +\n      \"deadline. No business action was authorised.\",\n\n    dust_conversation_id:\n      source.dust_conversation_id ??\n      $(\n        \"Processor - Validate Dust Creation\"\n      ).first().json.dust_conversation_id ??\n      null,\n\n    dust_last_poll_status: poll.dust_poll_status,\n    processor_started_at: source.processor_started_at,\n    elapsed_ms: elapsedMs,\n    processed_at: new Date().toISOString()\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2720,
+        448
+      ],
+      "id": "71fc5942-c92f-4cea-a857-d61834679831",
+      "name": "Processor - Normalise Dust Timeout"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst items = $input.all();\n\nif (items.length !== 1) {\n  throw new Error(\"EXPECTED_ONE_DUST_POLL_RESULT\");\n}\n\nconst poll = items[0].json;\n\nconst source = $(\n  \"Processor - Prepare Live Dust Request\"\n).first().json;\n\nconst creation = $(\n  \"Processor - Validate Dust Creation\"\n).first().json;\n\nconst startedAt = Date.parse(source.processor_started_at);\n\nconst configuredTimeout = Number(\n  source.source_prospect?.polling_timeout_ms ?? 120000\n);\n\nconst validTimeout =\n  Number.isFinite(configuredTimeout) &&\n  configuredTimeout >= 1000 &&\n  configuredTimeout <= 120000;\n\nconst elapsedMs = Number.isFinite(startedAt)\n  ? Math.max(0, Date.now() - startedAt)\n  : null;\n\nconst base = {\n  batch_id: source.batch_id,\n  batch_position: source.batch_position,\n  batch_size: source.batch_size,\n  prospect_id: source.prospect_id,\n  assessment_mode: \"live\",\n  processor_started_at: source.processor_started_at,\n  source_prospect: source.source_prospect,\n  dust_conversation_id: creation.dust_conversation_id,\n  elapsed_ms: elapsedMs,\n  dust_poll_status: poll.dust_poll_status,\n  dust_response: poll\n};\n\nlet resolution = \"FAILED\";\nlet errorCode = null;\n\nif (!validTimeout || elapsedMs === null) {\n  errorCode = \"INVALID_POLLING_CONFIGURATION\";\n\n} else if (\n  poll.conversation?.sId &&\n  poll.conversation.sId !== creation.dust_conversation_id\n) {\n  errorCode = \"DUST_CONVERSATION_ID_MISMATCH\";\n\n} else if (elapsedMs >= configuredTimeout) {\n  errorCode = \"DUST_POLLING_TIMEOUT\";\n\n} else if (\n  poll.error != null ||\n  Number(poll.statusCode ?? poll.status ?? 0) >= 400 ||\n  poll.dust_poll_status === \"API_ERROR\"\n) {\n  errorCode = \"DUST_GET_FAILED\";\n\n} else if (poll.dust_poll_status === \"INVALID_TIMESTAMP\") {\n  errorCode = \"INVALID_DUST_TIMESTAMP\";\n\n} else if (poll.dust_poll_status === \"AGENT_ERROR\") {\n  errorCode = \"DUST_AGENT_FAILED\";\n\n} else if (\n  poll.dust_poll_status === \"COMPLETED\" &&\n  poll.conversation?.sId === creation.dust_conversation_id\n) {\n  resolution = \"COMPLETED\";\n\n} else {\n  errorCode = \"INVALID_DUST_RESPONSE\";\n}\n\nreturn [{\n  json: {\n    ...base,\n    dust_resolution: resolution,\n    error_code: errorCode,\n    resolved_at: new Date().toISOString()\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2496,
+        736
+      ],
+      "id": "36d24fd3-56f6-4f4e-84b6-77bec745f91b",
+      "name": "Processor - Resolve Dust Poll Outcome"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 4
+          },
+          "conditions": [
+            {
+              "id": "bfc1dc57-6440-4390-bfaa-9e4012aed06d",
+              "leftValue": "={{ $json.dust_resolution }}",
+              "rightValue": "COMPLETED",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.4,
+      "position": [
+        2720,
+        736
+      ],
+      "id": "3aff9816-7957-4002-b8ed-9a8a787b677b",
+      "name": "Processor - Dust Assessment Completed?"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst items = $input.all();\n\nif (items.length !== 1) {\n  throw new Error(\"EXPECTED_ONE_FAILED_DUST_ASSESSMENT\");\n}\n\nconst record = items[0].json;\n\nif (\n  record.dust_resolution !== \"FAILED\" ||\n  typeof record.prospect_id !== \"string\" ||\n  !record.prospect_id.trim() ||\n  typeof record.error_code !== \"string\" ||\n  !record.error_code.trim()\n) {\n  throw new Error(\"INVALID_DUST_FAILURE_RECORD\");\n}\n\nconst code = record.error_code;\n\nlet processingStatus;\n\nif (code === \"DUST_POLLING_TIMEOUT\") {\n  processingStatus = \"TIMED_OUT\";\n\n} else if (code === \"DUST_GET_FAILED\") {\n  processingStatus = \"DUST_API_ERROR\";\n\n} else {\n  processingStatus = \"INVALID_DUST_RESPONSE\";\n}\n\nreturn [{\n  json: {\n    batch_id: record.batch_id,\n    batch_position: record.batch_position,\n    batch_size: record.batch_size,\n    prospect_id: record.prospect_id,\n\n    assessment_mode: \"live\",\n    processing_status: processingStatus,\n    action_outcome: null,\n    outreach_disposition: null,\n\n    suppression_source: null,\n    suppression_reason: null,\n\n    error_code: code,\n    error_detail:\n      \"Dust assessment did not complete successfully: \" + code,\n\n    decision_summary:\n      \"The Dust assessment could not be completed. \" +\n      \"No business action was authorised.\",\n\n    dust_conversation_id:\n      record.dust_conversation_id ?? null,\n    processor_started_at: record.processor_started_at,\n    elapsed_ms: record.elapsed_ms,\n    processed_at: new Date().toISOString()\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2944,
+        832
+      ],
+      "id": "36fea3a6-709b-4351-9bc9-06d85e4468f2",
+      "name": "Processor - Normalise Dust Poll Failure"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst items = $input.all();\n\nif (items.length !== 1) {\n  throw new Error(\"EXPECTED_ONE_COMPLETED_DUST_RESULT\");\n}\n\nconst record = items[0].json;\n\nconst base = {\n  batch_id: record.batch_id,\n  batch_position: record.batch_position,\n  batch_size: record.batch_size,\n  prospect_id: record.prospect_id,\n  assessment_mode: \"live\",\n  source_prospect: record.source_prospect,\n  processor_started_at: record.processor_started_at,\n  dust_conversation_id: record.dust_conversation_id\n};\n\nfunction reject(code, detail) {\n  return [{\n    json: {\n      ...base,\n      live_parse_status: \"REJECTED\",\n      decision: null,\n      error_code: code,\n      error_detail: detail,\n      processed_at: new Date().toISOString()\n    }\n  }];\n}\n\nif (record.dust_resolution !== \"COMPLETED\") {\n  return reject(\n    \"DUST_NOT_COMPLETED\",\n    \"Dust assessment has not completed successfully.\"\n  );\n}\n\nconst conversation = record.dust_response?.conversation;\n\nif (\n  !conversation ||\n  conversation.sId !== record.dust_conversation_id ||\n  conversation.hasError === true ||\n  conversation.isRunningAgentLoop === true ||\n  !Array.isArray(conversation.content)\n) {\n  return reject(\n    \"INVALID_DUST_RESPONSE\",\n    \"Completed Dust conversation failed integrity checks.\"\n  );\n}\n\nconst messages = conversation.content.flat();\n\nconst agentMessages = messages.filter(\n  message => message?.type === \"agent_message\"\n);\n\nconst latest = agentMessages[agentMessages.length - 1];\n\nif (\n  !latest ||\n  latest.status !== \"succeeded\" ||\n  typeof latest.content !== \"string\"\n) {\n  return reject(\n    \"INVALID_DUST_AGENT_MESSAGE\",\n    \"No successful structured agent message was found.\"\n  );\n}\n\nlet decision;\n\ntry {\n  decision = JSON.parse(latest.content);\n} catch (error) {\n  return reject(\n    \"MALFORMED_AI_JSON\",\n    \"Dust returned an invalid JSON decision: \" +\n      error.message\n  );\n}\n\nif (\n  !decision ||\n  typeof decision !== \"object\" ||\n  Array.isArray(decision)\n) {\n  return reject(\n    \"INVALID_AI_DECISION\",\n    \"Dust decision must be a JSON object.\"\n  );\n}\n\nif (decision.prospect_id !== record.prospect_id) {\n  return reject(\n    \"PROSPECT_ID_MISMATCH\",\n    \"Dust decision prospect ID differs from the original input.\"\n  );\n}\n\nreturn [{\n  json: {\n    ...base,\n    live_parse_status: \"PARSED\",\n    decision: {\n      ...decision,\n      dust_conversation_id: record.dust_conversation_id,\n      dust_agent_message_id: latest.sId ?? null,\n      dust_cost_credits: latest.costCredits ?? null,\n      dust_status: latest.status\n    },\n    error_code: null,\n    error_detail: null,\n    parsed_at: new Date().toISOString()\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2944,
+        640
+      ],
+      "id": "d37644de-bcb5-445c-868a-758b1306463c",
+      "name": "Processor - Parse Live Dust Decision"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst items = $input.all();\n\nif (items.length !== 1) {\n  throw new Error(\"EXPECTED_ONE_LIVE_PARSE_RESULT\");\n}\n\nconst record = items[0].json;\n\nconst sourceProspect = record.source_prospect;\n\nif (\n  !sourceProspect ||\n  typeof sourceProspect !== \"object\" ||\n  Array.isArray(sourceProspect) ||\n  typeof record.prospect_id !== \"string\" ||\n  !record.prospect_id.trim() ||\n  sourceProspect.prospect_id !== record.prospect_id ||\n  !sourceProspect.crm ||\n  typeof sourceProspect.crm !== \"object\" ||\n  Array.isArray(sourceProspect.crm)\n) {\n  throw new Error(\"INVALID_LIVE_SOURCE_CONTEXT\");\n}\n\nconst base = {\n  batch_id: record.batch_id,\n  batch_position: record.batch_position,\n  batch_size: record.batch_size,\n  prospect_id: record.prospect_id,\n  processor_started_at: record.processor_started_at,\n\n  assessment_mode: \"live\",\n\n  source: {\n    prospect_id: sourceProspect.prospect_id,\n    crm: sourceProspect.crm\n  },\n\n  dust_conversation_id:\n    record.dust_conversation_id ?? null\n};\n\nfunction rejected(code) {\n  return [{\n    json: {\n      ...base,\n      assessment_status: \"REJECTED\",\n      decision: null,\n      error_code: code\n    }\n  }];\n}\n\n// The parser has already classified malformed\n// JSON and invalid Dust conversation responses.\nif (record.live_parse_status === \"REJECTED\") {\n  return rejected(\n    record.error_code || \"INVALID_DUST_RESPONSE\"\n  );\n}\n\nif (\n  record.live_parse_status !== \"PARSED\" ||\n  record.error_code !== null\n) {\n  return rejected(\"INVALID_LIVE_PARSE_STATUS\");\n}\n\nconst d = record.decision;\n\nif (\n  !d ||\n  typeof d !== \"object\" ||\n  Array.isArray(d) ||\n  d.prospect_id !== record.prospect_id\n) {\n  return rejected(\"INVALID_AI_DECISION\");\n}\n\nconst priorities = [\"HIGH\", \"MEDIUM\", \"LOW\"];\n\nconst dispositions = [\n  \"ADD_TO_PRIORITY_OUTBOUND_QUEUE\",\n  \"ADD_TO_STANDARD_OUTBOUND_QUEUE\",\n  \"RESEARCH_BETTER_PERSONA\",\n  \"NURTURE_OR_MONITOR\",\n  \"HOLD\",\n  \"DO_NOT_PRIORITISE\"\n];\n\nconst reasons = [\n  \"NONE\",\n  \"DO_NOT_CONTACT\",\n  \"OPEN_OPPORTUNITY\",\n  \"EXISTING_CUSTOMER\",\n  \"EXISTING_RELATIONSHIP_OR_OWNER\",\n  \"PREVIOUS_DISQUALIFICATION\",\n  \"RECENT_CONTACT\",\n  \"OTHER\"\n];\n\nif (\n  !priorities.includes(d.account_priority) ||\n  !priorities.includes(d.prospect_fit) ||\n  !dispositions.includes(d.outreach_disposition) ||\n  typeof d.suppression_applied !== \"boolean\" ||\n  !reasons.includes(d.suppression_reason) ||\n  typeof d.decision_summary !== \"string\" ||\n  !d.decision_summary.trim() ||\n  typeof d.decision_rationale !== \"string\" ||\n  !d.decision_rationale.trim()\n) {\n  return rejected(\"INVALID_AI_DECISION_CONTRACT\");\n}\n\nreturn [{\n  json: {\n    ...base,\n    assessment_status: \"READY_FOR_GOVERNANCE\",\n    decision: d,\n    error_code: null\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3168,
+        640
+      ],
+      "id": "426b0298-9025-40d8-9b38-9a5fe8a329df",
+      "name": "Processor - Prepare Live Governance Input"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "Processor - Validate Prospect Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Processor - Validate Prospect Input": {
+      "main": [
+        [
+          {
+            "node": "Processor - Use Live Dust?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Processor - Prepare Mock AI Decision": {
+      "main": [
+        [
+          {
+            "node": "Processor - Assessment Ready",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Processor - Assessment Ready": {
+      "main": [
+        [
+          {
+            "node": "Processor - Call Hardened CRM Governance",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Processor - Normalise Assessment Rejection",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Processor - Call Hardened CRM Governance": {
+      "main": [
+        [
+          {
+            "node": "Processor - Normalise Governance Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Processor - Prepare Live Dust Request": {
+      "main": [
+        [
+          {
+            "node": "Processor - Dust Create Conversation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Processor - Validate Dust Creation": {
+      "main": [
+        [
+          {
+            "node": "Processor - Dust Creation Successful?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Processor - Dust Create Conversation": {
+      "main": [
+        [
+          {
+            "node": "Processor - Validate Dust Creation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Processor - Use Live Dust?": {
+      "main": [
+        [
+          {
+            "node": "Processor - Prepare Live Dust Request",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Processor - Prepare Mock AI Decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Processor - Dust Creation Successful?": {
+      "main": [
+        [
+          {
+            "node": "Processor - Wait for Dust Processing",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Processor - Normalise Dust Creation Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Processor - Wait for Dust Processing": {
+      "main": [
+        [
+          {
+            "node": "Processor - Get Dust Conversation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Processor - Get Dust Conversation": {
+      "main": [
+        [
+          {
+            "node": "Processor - Inspect Dust Conversation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Processor - Inspect Dust Conversation": {
+      "main": [
+        [
+          {
+            "node": "Processor - Dust Still Processing?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Processor - Dust Still Processing?": {
+      "main": [
+        [
+          {
+            "node": "Processor - Polling Window Available?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Processor - Resolve Dust Poll Outcome",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Processor - Polling Window Available?": {
+      "main": [
+        [
+          {
+            "node": "Processor - Wait Before Dust Retry",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Processor - Normalise Dust Timeout",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Processor - Resolve Dust Poll Outcome": {
+      "main": [
+        [
+          {
+            "node": "Processor - Dust Assessment Completed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Processor - Dust Assessment Completed?": {
+      "main": [
+        [
+          {
+            "node": "Processor - Parse Live Dust Decision",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Processor - Normalise Dust Poll Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Processor - Wait Before Dust Retry": {
+      "main": [
+        [
+          {
+            "node": "Processor - Get Dust Conversation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Processor - Parse Live Dust Decision": {
+      "main": [
+        [
+          {
+            "node": "Processor - Prepare Live Governance Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Processor - Prepare Live Governance Input": {
+      "main": [
+        [
+          {
+            "node": "Processor - Assessment Ready",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "nodeGroups": []
+}

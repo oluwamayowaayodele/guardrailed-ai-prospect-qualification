@@ -1,0 +1,162 @@
+[
+  {
+    "batch_id": "BATCH-UAT-001",
+    "batch_position": 1,
+    "batch_size": 5,
+    "prospect_id": "P-B001",
+    "assessment_mode": "mock",
+    "account": {
+      "company_name": "Aurelius Insurance Group",
+      "industry": "Insurance",
+      "employee_count": 8500,
+      "annual_revenue_gbp": 2400000000
+    },
+    "finance_environment": {
+      "primary_erp": "SAP ECC"
+    },
+    "transformation_signals": {
+      "finance_transformation_programme": true,
+      "erp_migration": true,
+      "finance_systems_hiring": true
+    },
+    "prospect": {
+      "job_title": "Director of Finance Transformation"
+    },
+    "crm": {
+      "last_contacted_days_ago": 30,
+      "do_not_contact": false,
+      "open_opportunity": false,
+      "existing_customer": false,
+      "existing_relationship_or_owner": false,
+      "previous_disqualification": false
+    }
+  },
+  {
+    "batch_id": "BATCH-UAT-001",
+    "batch_position": 2,
+    "batch_size": 5,
+    "prospect_id": "P-B002",
+    "assessment_mode": "mock",
+    "account": {
+      "company_name": "Northbridge Manufacturing",
+      "industry": "Manufacturing",
+      "employee_count": 4200,
+      "annual_revenue_gbp": 1100000000
+    },
+    "finance_environment": {
+      "primary_erp": "Oracle E-Business Suite"
+    },
+    "transformation_signals": {
+      "finance_transformation_programme": true,
+      "erp_migration": true,
+      "finance_systems_hiring": false
+    },
+    "prospect": {
+      "job_title": "VP Finance"
+    },
+    "crm": {
+      "last_contacted_days_ago": 30,
+      "do_not_contact": false,
+      "open_opportunity": true,
+      "existing_customer": false,
+      "existing_relationship_or_owner": false,
+      "previous_disqualification": false
+    }
+  },
+  {
+    "batch_id": "BATCH-UAT-001",
+    "batch_position": 3,
+    "batch_size": 5,
+    "prospect_id": "P-B003",
+    "assessment_mode": "mock",
+    "account": {
+      "company_name": "Westhaven Logistics",
+      "industry": "Logistics",
+      "employee_count": 2300,
+      "annual_revenue_gbp": 580000000
+    },
+    "finance_environment": {
+      "primary_erp": "Microsoft Dynamics"
+    },
+    "transformation_signals": {
+      "finance_transformation_programme": true,
+      "erp_migration": false,
+      "finance_systems_hiring": true
+    },
+    "prospect": {
+      "job_title": "Finance Systems Manager"
+    },
+    "crm": {
+      "last_contacted_days_ago": 5,
+      "do_not_contact": false,
+      "open_opportunity": false,
+      "existing_customer": false,
+      "existing_relationship_or_owner": false,
+      "previous_disqualification": false
+    }
+  },
+  {
+    "batch_id": "BATCH-UAT-001",
+    "batch_position": 4,
+    "batch_size": 5,
+    "prospect_id": "P-B004",
+    "assessment_mode": "mock",
+    "account": {
+      "company_name": "Meridian Retail Holdings",
+      "industry": "Retail",
+      "employee_count": 6100,
+      "annual_revenue_gbp": 1750000000
+    },
+    "finance_environment": {
+      "primary_erp": "SAP S/4HANA"
+    },
+    "transformation_signals": {
+      "finance_transformation_programme": false,
+      "erp_migration": false,
+      "finance_systems_hiring": false
+    },
+    "prospect": {
+      "job_title": "Group Financial Controller"
+    },
+    "crm": {
+      "last_contacted_days_ago": 30,
+      "do_not_contact": false,
+      "open_opportunity": false,
+      "existing_customer": false,
+      "existing_relationship_or_owner": false,
+      "previous_disqualification": false
+    }
+  },
+  {
+    "batch_id": "BATCH-UAT-001",
+    "batch_position": 5,
+    "batch_size": 5,
+    "prospect_id": "P-B005",
+    "assessment_mode": "mock",
+    "account": {
+      "company_name": "Crestfield Energy Services",
+      "industry": "Energy",
+      "employee_count": 3700,
+      "annual_revenue_gbp": 890000000
+    },
+    "finance_environment": {
+      "primary_erp": "SAP ECC"
+    },
+    "transformation_signals": {
+      "finance_transformation_programme": true,
+      "erp_migration": true,
+      "finance_systems_hiring": true
+    },
+    "prospect": {
+      "job_title": "Head of Finance Transformation"
+    },
+    "crm": {
+      "last_contacted_days_ago": 30,
+      "do_not_contact": false,
+      "open_opportunity": false,
+      "existing_customer": false,
+      "existing_relationship_or_owner": true,
+      "previous_disqualification": false
+    }
+  }
+]

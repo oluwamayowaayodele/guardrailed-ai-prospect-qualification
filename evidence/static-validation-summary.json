@@ -1,0 +1,40 @@
+{
+  "audit_date": "2026-11-11",
+  "validation_type": "static_export_comparison_only",
+  "released_workflows": {
+    "crm-governance-engine.json": {
+      "nodes": 2,
+      "reachable": 2,
+      "javascript_syntax_checks": 1,
+      "edges": 1,
+      "release_sha256": "bcd73c7a6c15116bce763d9f0f0c03f3de76974fb91733d99a337907915e8c2f"
+    },
+    "prospect-processor.json": {
+      "nodes": 25,
+      "reachable": 25,
+      "javascript_syntax_checks": 13,
+      "edges": 26,
+      "release_sha256": "d8f0ba8f7f2a88554be3bb2b124b75b426af7a5b4c316f801e50287a20ef4370"
+    },
+    "batch-uat.json": {
+      "nodes": 8,
+      "reachable": 8,
+      "javascript_syntax_checks": 5,
+      "edges": 8,
+      "release_sha256": "859ce162dbfb4fa8fe94a27a1eb6fc8d1aab10970a690fea8248f9829aa312ff"
+    },
+    "single-prospect-live-uat.json": {
+      "nodes": 8,
+      "reachable": 8,
+      "javascript_syntax_checks": 5,
+      "edges": 8,
+      "release_sha256": "14361fc72444f798c3a2b1eda19608223cda747ad34d24c1d0b0ff68ff24f443"
+    }
+  },
+  "totals": {
+    "workflow_count": 4,
+    "node_count": 43,
+    "code_js_syntax_checks": 24,
+    "graph_nodes_reachable": 43
+  }
+}

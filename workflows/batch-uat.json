@@ -1,0 +1,216 @@
+{
+  "name": "Finance Transformation Signal Intelligence – Batch UAT",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        112
+      ],
+      "id": "d9303f55-7055-4fd6-a052-1cf3dba3fef8",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst batchId = \"BATCH-UAT-001\";\n\nconst baseCRM = {\n  last_contacted_days_ago: 30,\n  do_not_contact: false,\n  open_opportunity: false,\n  existing_customer: false,\n  existing_relationship_or_owner: false,\n  previous_disqualification: false\n};\n\nconst prospects = [\n  {\n    prospect_id: \"P-B001\",\n    company_name: \"Aurelius Insurance Group\",\n    industry: \"Insurance\",\n    employee_count: 8500,\n    annual_revenue_gbp: 2400000000,\n    primary_erp: \"SAP ECC\",\n    job_title: \"Director of Finance Transformation\",\n    signals: {\n      finance_transformation_programme: true,\n      erp_migration: true,\n      finance_systems_hiring: true\n    },\n    crm: {\n      ...baseCRM\n    }\n  },\n  {\n    prospect_id: \"P-B002\",\n    company_name: \"Northbridge Manufacturing\",\n    industry: \"Manufacturing\",\n    employee_count: 4200,\n    annual_revenue_gbp: 1100000000,\n    primary_erp: \"Oracle E-Business Suite\",\n    job_title: \"VP Finance\",\n    signals: {\n      finance_transformation_programme: true,\n      erp_migration: true,\n      finance_systems_hiring: false\n    },\n    crm: {\n      ...baseCRM,\n      open_opportunity: true\n    }\n  },\n  {\n    prospect_id: \"P-B003\",\n    company_name: \"Westhaven Logistics\",\n    industry: \"Logistics\",\n    employee_count: 2300,\n    annual_revenue_gbp: 580000000,\n    primary_erp: \"Microsoft Dynamics\",\n    job_title: \"Finance Systems Manager\",\n    signals: {\n      finance_transformation_programme: true,\n      erp_migration: false,\n      finance_systems_hiring: true\n    },\n    crm: {\n      ...baseCRM,\n      last_contacted_days_ago: 5\n    }\n  },\n  {\n    prospect_id: \"P-B004\",\n    company_name: \"Meridian Retail Holdings\",\n    industry: \"Retail\",\n    employee_count: 6100,\n    annual_revenue_gbp: 1750000000,\n    primary_erp: \"SAP S/4HANA\",\n    job_title: \"Group Financial Controller\",\n    signals: {\n      finance_transformation_programme: false,\n      erp_migration: false,\n      finance_systems_hiring: false\n    },\n    crm: {\n      ...baseCRM\n    }\n  },\n  {\n    prospect_id: \"P-B005\",\n    company_name: \"Crestfield Energy Services\",\n    industry: \"Energy\",\n    employee_count: 3700,\n    annual_revenue_gbp: 890000000,\n    primary_erp: \"SAP ECC\",\n    job_title: \"Head of Finance Transformation\",\n    signals: {\n      finance_transformation_programme: true,\n      erp_migration: true,\n      finance_systems_hiring: true\n    },\n    crm: {\n      ...baseCRM,\n      existing_relationship_or_owner: true\n    }\n  }\n];\n\n// Prevent ambiguous record matching.\nconst ids = prospects.map(p => p.prospect_id);\n\nif (new Set(ids).size !== ids.length) {\n  throw new Error(\"DUPLICATE_PROSPECT_ID\");\n}\n\nif (\n  prospects.some(p =>\n    typeof p.prospect_id !== \"string\" ||\n    !p.prospect_id.trim()\n  )\n) {\n  throw new Error(\"INVALID_PROSPECT_ID\");\n}\n\n// Emit one n8n item per prospect.\nreturn prospects.map((p, index) => ({\n  json: {\n    batch_id: batchId,\n    batch_position: index + 1,\n    batch_size: prospects.length,\n    prospect_id: p.prospect_id,\n    assessment_mode: \"mock\",\n    account: {\n      company_name: p.company_name,\n      industry: p.industry,\n      employee_count: p.employee_count,\n      annual_revenue_gbp: p.annual_revenue_gbp\n    },\n    finance_environment: {\n      primary_erp: p.primary_erp\n    },\n    transformation_signals: p.signals,\n    prospect: {\n      job_title: p.job_title\n    },\n    crm: p.crm\n  }\n}));\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        192,
+        96
+      ],
+      "id": "b397ebf7-4f45-474a-9789-99c46d215902",
+      "name": "Batch - Generate Synthetic Prospects"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst expected = $(\"Batch - Generate Synthetic Prospects\")\n  .all()\n  .map(item => item.json);\n\nconst received = $input.all().map(item => item.json);\n\nif (expected.length === 0) {\n  throw new Error(\"EMPTY_INPUT_BATCH\");\n}\n\nif (received.length !== expected.length) {\n  throw new Error(\n    `RESULT_COUNT_MISMATCH: expected ${expected.length}, received ${received.length}`\n  );\n}\n\nconst allowedStatuses = new Set([\n  \"COMPLETED\",\n  \"REJECTED\",\n  \"TIMED_OUT\",\n  \"DUST_API_ERROR\",\n  \"PROCESSOR_FAILURE\",\n  \"INVALID_DUST_RESPONSE\"\n]);\n\nconst allowedActions = new Set([\n  \"QUEUED_PRIORITY\",\n  \"QUEUED_STANDARD\",\n  \"PERSONA_RESEARCH\",\n  \"NURTURE\",\n  \"HELD\",\n  \"NOT_PRIORITISED\"\n]);\n\nconst expectedIds = new Set();\nconst resultsById = new Map();\n\nfor (const source of expected) {\n  if (\n    typeof source.prospect_id !== \"string\" ||\n    expectedIds.has(source.prospect_id)\n  ) {\n    throw new Error(\"INVALID_OR_DUPLICATE_INPUT_ID\");\n  }\n  expectedIds.add(source.prospect_id);\n}\n\nfor (const result of received) {\n  const id = result.prospect_id;\n\n  if (!expectedIds.has(id)) {\n    throw new Error(`UNEXPECTED_PROSPECT: ${id}`);\n  }\n\n  if (resultsById.has(id)) {\n    throw new Error(`DUPLICATE_PROSPECT_RESULT: ${id}`);\n  }\n\n  if (!allowedStatuses.has(result.processing_status)) {\n    throw new Error(`INVALID_PROCESSING_STATUS: ${id}`);\n  }\n\n  if (result.processing_status === \"COMPLETED\") {\n    if (!allowedActions.has(result.action_outcome)) {\n      throw new Error(`INVALID_COMPLETED_ACTION: ${id}`);\n    }\n\n    if (result.error_code != null) {\n      throw new Error(`COMPLETED_WITH_ERROR: ${id}`);\n    }\n  } else {\n    if (result.action_outcome != null) {\n      throw new Error(`FAILED_WITH_BUSINESS_ACTION: ${id}`);\n    }\n\n    if (\n      typeof result.error_code !== \"string\" ||\n      !result.error_code.trim()\n    ) {\n      throw new Error(`MISSING_FAILURE_ERROR_CODE: ${id}`);\n    }\n  }\n\n  resultsById.set(id, result);\n}\n\nfor (const source of expected) {\n  const result = resultsById.get(source.prospect_id);\n\n  if (!result) {\n    throw new Error(\n      `MISSING_PROSPECT_RESULT: ${source.prospect_id}`\n    );\n  }\n\n  if (\n    result.batch_id !== source.batch_id ||\n    result.batch_position !== source.batch_position ||\n    result.batch_size !== source.batch_size\n  ) {\n    throw new Error(\n      `BATCH_IDENTITY_MISMATCH: ${source.prospect_id}`\n    );\n  }\n}\n\n// Restore the original input order.\nconst ordered = expected.map(source =>\n  resultsById.get(source.prospect_id)\n);\n\nconst count = status =>\n  ordered.filter(r => r.processing_status === status).length;\n\nreturn [{\n  json: {\n    batch_id: expected[0].batch_id,\n    total_prospects: expected.length,\n    completed: count(\"COMPLETED\"),\n    rejected: count(\"REJECTED\"),\n    timed_out: count(\"TIMED_OUT\"),\n    dust_api_error: count(\"DUST_API_ERROR\"),\n    processor_failure: count(\"PROCESSOR_FAILURE\"),\n    invalid_dust_response: count(\"INVALID_DUST_RESPONSE\"),\n    verification_status: \"PASS\",\n    results: ordered\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1264,
+        16
+      ],
+      "id": "86d61d07-02ea-414e-9b1d-ddf09171af4f",
+      "name": "Batch - Verify Collected Results"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "",
+          "mode": "list",
+          "cachedResultName": "Finance Transformation Signal Intelligence – Prospect Processor – UAT"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "mode": "each",
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.4,
+      "position": [
+        624,
+        64
+      ],
+      "id": "5f754c50-95f3-49e5-bd2a-b7e618f796bf",
+      "name": "Batch - Call Prospect Processor",
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst input = $input.all();\n\nif (input.length !== 1) {\n  throw new Error(\"EXPECTED_ONE_VERIFIED_BATCH\");\n}\n\nconst report = input[0].json;\n\nif (report.verification_status !== \"PASS\") {\n  throw new Error(\"BATCH_VERIFICATION_NOT_PASSED\");\n}\n\nconst results = report.results;\n\nif (\n  !Array.isArray(results) ||\n  results.length === 0 ||\n  results.length !== report.total_prospects\n) {\n  throw new Error(\"INVALID_BATCH_RESULTS\");\n}\n\n// All six supported technical processing statuses.\n// Includes invalid responses from live Dust assessments.\nconst allowedStatuses = [\n  \"COMPLETED\",\n  \"REJECTED\",\n  \"TIMED_OUT\",\n  \"DUST_API_ERROR\",\n  \"PROCESSOR_FAILURE\",\n  \"INVALID_DUST_RESPONSE\"\n];\n\nconst allowedActions = [\n  \"QUEUED_PRIORITY\",\n  \"QUEUED_STANDARD\",\n  \"PERSONA_RESEARCH\",\n  \"NURTURE\",\n  \"HELD\",\n  \"NOT_PRIORITISED\"\n];\n\nconst statusCounts = Object.fromEntries(\n  allowedStatuses.map(s => [s, 0])\n);\n\nconst actionCounts = Object.fromEntries(\n  allowedActions.map(a => [a, 0])\n);\n\nconst errorCounts = {};\nconst ids = new Set();\n\nconst dispositions = {\n  ADD_TO_PRIORITY_OUTBOUND_QUEUE: \"QUEUED_PRIORITY\",\n  ADD_TO_STANDARD_OUTBOUND_QUEUE: \"QUEUED_STANDARD\",\n  RESEARCH_BETTER_PERSONA: \"PERSONA_RESEARCH\",\n  NURTURE_OR_MONITOR: \"NURTURE\",\n  HOLD: \"HELD\",\n  DO_NOT_PRIORITISE: \"NOT_PRIORITISED\"\n};\n\nfor (const r of results) {\n  if (\n    typeof r.prospect_id !== \"string\" ||\n    !r.prospect_id.trim() ||\n    ids.has(r.prospect_id) ||\n    r.batch_id !== report.batch_id ||\n    !allowedStatuses.includes(r.processing_status)\n  ) {\n    throw new Error(\"INVALID_OR_DUPLICATE_BATCH_RESULT\");\n  }\n\n  ids.add(r.prospect_id);\n\n  statusCounts[r.processing_status]++;\n\n  if (r.processing_status === \"COMPLETED\") {\n    if (\n      !allowedActions.includes(r.action_outcome) ||\n      dispositions[r.outreach_disposition] !== r.action_outcome ||\n      r.error_code !== null ||\n      r.final_validation_status !== \"PASS\"\n    ) {\n      throw new Error(\n        `INVALID_COMPLETED_RESULT:${r.prospect_id}`\n      );\n    }\n\n    actionCounts[r.action_outcome]++;\n\n  } else {\n    // Technical failures must never authorise\n    // a business action or outbound disposition.\n    if (\n      r.action_outcome !== null ||\n      r.outreach_disposition !== null ||\n      typeof r.error_code !== \"string\" ||\n      !r.error_code.trim()\n    ) {\n      throw new Error(\n        `INVALID_FAILED_RESULT:${r.prospect_id}`\n      );\n    }\n\n    errorCounts[r.error_code] =\n      (errorCounts[r.error_code] || 0) + 1;\n  }\n}\n\nconst successful = statusCounts.COMPLETED;\nconst failed = results.length - successful;\n\nreturn [{\n  json: {\n    batch_id: report.batch_id,\n    total_prospects: results.length,\n    successful,\n    failed,\n    status_counts: statusCounts,\n    action_outcome_counts: actionCounts,\n    error_counts: errorCounts,\n    batch_status:\n      failed === 0 ? \"COMPLETED\" :\n      successful === 0 ? \"FAILED\" :\n      \"PARTIAL_SUCCESS\",\n    verification_status: \"PASS\",\n    completed_at: new Date().toISOString(),\n    results\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1456,
+        16
+      ],
+      "id": "600c0f60-ff41-4579-9b46-d8913cce2dbe",
+      "name": "Batch - Summarise Processing Outcomes"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst items = $input.all();\n\nconst errorPrefix = \"UAT_FORCED_PROCESSOR_FAILURE\";\n\nreturn items.map((item, index) => {\n  const source = item.json;\n\n  // Preserve the identity supplied by n8n's\n  // error output, rather than reconstructing it\n  // from execution order or an AI response.\n  if (\n    typeof source.batch_id !== \"string\" ||\n    !source.batch_id.trim() ||\n    typeof source.prospect_id !== \"string\" ||\n    !source.prospect_id.trim() ||\n    !Number.isInteger(source.batch_position) ||\n    !Number.isInteger(source.batch_size)\n  ) {\n    throw new Error(\n      \"UNRECOVERABLE_PROCESSOR_IDENTITY\"\n    );\n  }\n\n  const errorMessage =\n    typeof source.error === \"string\"\n      ? source.error\n      : source.error?.message;\n\n  if (\n    typeof errorMessage !== \"string\" ||\n    !errorMessage.trim()\n  ) {\n    throw new Error(\n      \"MISSING_PROCESSOR_ERROR_MESSAGE\"\n    );\n  }\n\n  const isForcedTest =\n    errorMessage.includes(errorPrefix);\n\n  return {\n    json: {\n      batch_id: source.batch_id,\n      batch_position: source.batch_position,\n      batch_size: source.batch_size,\n      prospect_id: source.prospect_id,\n\n     assessment_mode:\n  [\"mock\", \"live\"].includes(source.assessment_mode)\n    ? source.assessment_mode\n    : null,\n      processing_status: \"PROCESSOR_FAILURE\",\n      action_outcome: null,\n      outreach_disposition: null,\n\n      suppression_source: null,\n      suppression_reason: null,\n\n      error_code: isForcedTest\n        ? errorPrefix\n        : \"UNEXPECTED_PROCESSOR_ERROR\",\n\n      error_detail: errorMessage,\n\n      decision_summary:\n        \"Prospect assessment failed unexpectedly. \" +\n        \"No business action was authorised.\",\n\n      dust_conversation_id:\n  typeof source.dust_conversation_id === \"string\" &&\n  source.dust_conversation_id.trim()\n    ? source.dust_conversation_id\n    : null,\n      processed_at: new Date().toISOString()\n    },\n    pairedItem: { item: index }\n  };\n});\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        896,
+        192
+      ],
+      "id": "8e9a385c-6653-42af-9317-a1e10facc8fd",
+      "name": "Batch - Normalise Processor Failure"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        1056,
+        0
+      ],
+      "id": "fcc942a6-d926-4007-aaba-32d66e91901c",
+      "name": "Batch - Combine Processor Outcomes"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst items = $input.all();\n\n// Stage 19: Batch safety limits.\nconst MAX_MOCK_BATCH_SIZE = 25;\nconst MAX_LIVE_BATCH_SIZE = 5;\n\n// Reject empty batches.\nif (items.length === 0) {\n  throw new Error(\"EMPTY_BATCH\");\n}\n\nconst records = items.map(item => item.json);\n\n// Resolve the mode from the first record.\n// Mock remains the default for reproducible UAT.\nconst assessmentMode =\n  records[0]?.assessment_mode ?? \"mock\";\n\nif (\n  assessmentMode !== \"mock\" &&\n  assessmentMode !== \"live\"\n) {\n  throw new Error(\"INVALID_BATCH_ASSESSMENT_MODE\");\n}\n\nconst maxBatchSize =\n  assessmentMode === \"live\"\n    ? MAX_LIVE_BATCH_SIZE\n    : MAX_MOCK_BATCH_SIZE;\n\n// Enforce the limit before processing any prospect.\nif (items.length > maxBatchSize) {\n  throw new Error(\n    `BATCH_SIZE_LIMIT_EXCEEDED: ` +\n    `${items.length} records supplied; ` +\n    `maximum ${maxBatchSize} for ${assessmentMode}`\n  );\n}\n\nconst batchId = records[0]?.batch_id;\nconst seenProspectIds = new Set();\n\nif (\n  typeof batchId !== \"string\" ||\n  !batchId.trim()\n) {\n  throw new Error(\"INVALID_BATCH_ID\");\n}\n\nfor (let index = 0; index < records.length; index++) {\n  const record = records[index];\n\n  if (\n    !record ||\n    typeof record !== \"object\" ||\n    Array.isArray(record)\n  ) {\n    throw new Error(\n      `INVALID_BATCH_RECORD: position ${index + 1}`\n    );\n  }\n\n  // All records must belong to the same batch.\n  if (record.batch_id !== batchId) {\n    throw new Error(\"MIXED_BATCH_IDENTIFIERS\");\n  }\n\n  // Prevent accidental mixing of mock and live.\n  const recordMode =\n    record.assessment_mode ?? \"mock\";\n\n  if (recordMode !== assessmentMode) {\n    throw new Error(\"MIXED_ASSESSMENT_MODES\");\n  }\n\n  // Enforce the existing one-based batch convention.\n  if (\n    !Number.isInteger(record.batch_position) ||\n    record.batch_position !== index + 1\n  ) {\n    throw new Error(\n      `INVALID_BATCH_POSITION: ${index + 1}`\n    );\n  }\n\n  if (\n    !Number.isInteger(record.batch_size) ||\n    record.batch_size !== items.length\n  ) {\n    throw new Error(\"INCONSISTENT_BATCH_SIZE\");\n  }\n\n  // Require a valid, unique prospect identity.\n  if (\n    typeof record.prospect_id !== \"string\" ||\n    !record.prospect_id.trim()\n  ) {\n    throw new Error(\"INVALID_PROSPECT_ID\");\n  }\n\n  if (seenProspectIds.has(record.prospect_id)) {\n    throw new Error(\n      `DUPLICATE_PROSPECT_ID: ${record.prospect_id}`\n    );\n  }\n\n  seenProspectIds.add(record.prospect_id);\n\n  // CRM context is mandatory for deterministic\n  // governance, regardless of assessment mode.\n  if (\n    !record.crm ||\n    typeof record.crm !== \"object\" ||\n    Array.isArray(record.crm)\n  ) {\n    throw new Error(\n      `MISSING_CRM_CONTEXT: ${record.prospect_id}`\n    );\n  }\n\n  // Validate optional polling configuration.\n  if (record.polling_timeout_ms != null) {\n    const timeout = record.polling_timeout_ms;\n\n    if (\n      typeof timeout !== \"number\" ||\n      !Number.isInteger(timeout) ||\n      timeout < 1000 ||\n      timeout > 120000\n    ) {\n      throw new Error(\n        `INVALID_POLLING_TIMEOUT: ${record.prospect_id}`\n      );\n    }\n  }\n}\n\n// Preserve the original data unchanged.\n// Maintain pairing with each input item.\nreturn items.map((item, index) => ({\n  json: { ...item.json },\n  pairedItem: { item: index }\n}));\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        416,
+        96
+      ],
+      "id": "78a5cc27-6195-4666-b9e8-2cebf5e7685f",
+      "name": "Batch - Validate Batch Limits"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "Batch - Generate Synthetic Prospects",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Batch - Generate Synthetic Prospects": {
+      "main": [
+        [
+          {
+            "node": "Batch - Validate Batch Limits",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Batch - Call Prospect Processor": {
+      "main": [
+        [
+          {
+            "node": "Batch - Combine Processor Outcomes",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Batch - Normalise Processor Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Batch - Verify Collected Results": {
+      "main": [
+        [
+          {
+            "node": "Batch - Summarise Processing Outcomes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Batch - Normalise Processor Failure": {
+      "main": [
+        [
+          {
+            "node": "Batch - Combine Processor Outcomes",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Batch - Combine Processor Outcomes": {
+      "main": [
+        [
+          {
+            "node": "Batch - Verify Collected Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Batch - Validate Batch Limits": {
+      "main": [
+        [
+          {
+            "node": "Batch - Call Prospect Processor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "nodeGroups": []
+}
